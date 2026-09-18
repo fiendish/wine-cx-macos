@@ -1,0 +1,14 @@
+#!/bin/bash
+# SPDX-License-Identifier: MIT
+set -euo pipefail
+
+marker_dir="$HOME/Library/Caches/com.github.fiendish.wine-cx"
+umask 077
+mkdir -p "$marker_dir"
+printf '%s\n%s\n' "$PPID" "$(/bin/ps -p "$PPID" -o lstart=)" > "$marker_dir/terminal.pid.$$.tmp"
+mv -f "$marker_dir/terminal.pid.$$.tmp" "$marker_dir/terminal.pid"
+
+clear
+printf 'Wine CX (%s)\n\n' "$(wine --version)"
+printf 'Run an application: wine program.exe\n'
+printf 'Configure Wine:    winecfg\n'

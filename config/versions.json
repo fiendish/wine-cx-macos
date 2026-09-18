@@ -1,0 +1,26 @@
+{
+  "package_revision": 5,
+  "crossover": {
+    "release": "26.3.0",
+    "wine_version": "11.0",
+    "source_url": "https://media.codeweavers.com/pub/crossover/source/crossover-sources-26.3.0.tar.gz",
+    "source_sha256": "ac99c8ca4b3848f3e81784135f023df266b61c2345726ea55a50b3e030dd6872",
+    "source_size": 149054023
+  },
+  "macports": {
+    "repository": "https://github.com/macports/macports-ports",
+    "commit": "0502a55a41cd28d011a5e2b9de125a8e359fe1b6",
+    "license": "BSD-3-Clause"
+  },
+  "wine_mono": "10.4.1",
+  "wine_gecko": "2.47.4",
+  "gstreamer": {
+    "required_runtime": "1.28.5",
+    "installer_url": "https://gstreamer.freedesktop.org/data/pkg/osx/1.28.5/gstreamer-1.0-1.28.5-universal.pkg",
+    "installer_sha256": "0a8fc7a1cf8d7bac833ca0ebe2fd196a199c2465e810cd5b1e4b4f720c258f43",
+    "installer_size": 153437667,
+    "development_url": "https://gstreamer.freedesktop.org/data/pkg/osx/1.28.5/gstreamer-1.0-devel-1.28.5-universal.pkg",
+    "development_sha256": "6f7b55e8fb86dcc615c9cae46b79b7785851e5c77f79a938648a81dfa2603729",
+    "development_size": 751992637
+  }
+}

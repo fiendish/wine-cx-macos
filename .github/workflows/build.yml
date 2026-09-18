@@ -1,0 +1,141 @@
+name: Build Wine CX
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Optional release tag; leave empty for a build artifact only
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    concurrency:
+      group: wine-cx-build-${{ github.ref }}
+      cancel-in-progress: true
+    runs-on: macos-15-intel
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: melusina-org/setup-macports@103eded5f10979e927bffcd6d0b86cbbdb2c3bb3
+        with:
+          parameters: .github/parameters/setup-macports.yaml
+          cache: disable
+      - run: scripts/prepare.sh
+      - run: scripts/build-release.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Wine-CX-26.3.0-macos-x86_64
+          path: dist/release/*
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    if: ${{ github.event_name == 'push' || inputs.tag != '' }}
+    needs: build
+    concurrency:
+      group: wine-cx-release
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: Wine-CX-26.3.0-macos-x86_64
+          path: release
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            RELEASE_TAG=v26.3.0
+          fi
+          archives=(release/Wine-CX-*-macos-x86_64.tar.xz)
+          if [[ ${#archives[@]} -ne 1 || ! -f "${archives[0]}" ]]; then
+            echo "Expected one Wine CX app archive in release/" >&2
+            exit 1
+          fi
+          archive_name=${archives[0]##*/}
+          download_url="https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/$archive_name"
+          cat > "$RUNNER_TEMP/release-notes.md" <<'NOTES'
+          A standalone Wine app built from the published CrossOver 26.3.0 source. It includes the open-source Wine changes, but not the non-free commercial parts.
+
+          ## Install
+
+          1. Download [ARCHIVE_NAME](DOWNLOAD_URL)
+          2. Extract it
+          3. Move `Wine CX.app` to your `Applications` folder.
+
+          Apple Silicon Macs require installing Rosetta.
+
+          If MP3, WMA, or video does not play in a Windows program, install the separate [GStreamer 1.28.5 runtime](https://gstreamer.freedesktop.org/data/pkg/osx/1.28.5/gstreamer-1.0-1.28.5-universal.pkg). MUSHclient's WAV sounds do not need it.
+          NOTES
+          notes=$(< "$RUNNER_TEMP/release-notes.md")
+          notes=${notes/ARCHIVE_NAME/$archive_name}
+          notes=${notes/DOWNLOAD_URL/$download_url}
+          if [[ "$GITHUB_EVENT_NAME" != push ]]; then
+            gh release create "$RELEASE_TAG" release/* \
+              --target "$GITHUB_SHA" --title "Wine CX 26.3.0" \
+              --notes "$notes"
+            exit 0
+          fi
+
+          latest_sha=$(gh api "repos/$GH_REPO/commits/main" --jq .sha)
+          if [[ "$latest_sha" != "$GITHUB_SHA" ]]; then
+            echo "A newer commit is on main; skipping this release."
+            exit 0
+          fi
+          release_json=$(gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG")
+          if [[ $(jq -r .immutable <<< "$release_json") != false ]]; then
+            echo "The release is immutable." >&2
+            exit 1
+          fi
+          release_id=$(jq -er .id <<< "$release_json")
+          old_assets=$(gh api "repos/$GH_REPO/releases/$release_id/assets?per_page=100")
+
+          mkdir staging
+          pending="pending-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-"
+          for file in release/*; do
+            [[ -f "$file" ]] || { echo "Missing release asset: $file" >&2; exit 1; }
+            ln "$file" "staging/$pending${file##*/}"
+          done
+          gh release upload "$RELEASE_TAG" staging/*
+          staged_assets=$(gh api "repos/$GH_REPO/releases/$release_id/assets?per_page=100")
+          for file in release/*; do
+            jq -er --arg name "$pending${file##*/}" \
+              '.[] | select(.name == $name and .state == "uploaded") | .id' \
+              <<< "$staged_assets" > /dev/null
+          done
+
+          for file in release/*; do
+            name=${file##*/}
+            old_id=$(jq -r --arg name "$name" \
+              '.[] | select(.name == $name) | .id' <<< "$old_assets")
+            if [[ -n "$old_id" ]]; then
+              gh api -X DELETE "repos/$GH_REPO/releases/assets/$old_id"
+            fi
+            id=$(jq -er --arg name "$pending$name" \
+              '.[] | select(.name == $name) | .id' <<< "$staged_assets")
+            renamed=$(gh api -X PATCH "repos/$GH_REPO/releases/assets/$id" \
+              -f name="$name" --jq .name)
+            [[ "$renamed" == "$name" ]]
+          done
+          jq -r '.[] | [.id, .name] | @tsv' <<< "$old_assets" |
+            while IFS=$'\t' read -r id name; do
+              if [[ ! -f "release/$name" ]]; then
+                gh api -X DELETE "repos/$GH_REPO/releases/assets/$id"
+              fi
+            done
+          gh release edit "$RELEASE_TAG" --notes "$notes"
+          moved=$(gh api -X PATCH "repos/$GH_REPO/git/refs/tags/$RELEASE_TAG" \
+            -f sha="$GITHUB_SHA" -F force=true --jq .object.sha)
+          [[ "$moved" == "$GITHUB_SHA" ]]

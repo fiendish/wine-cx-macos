@@ -1,0 +1,1 @@
+Wine-CX.icns was made from sources/wine/programs/winecfg/logo.ico in the published CrossOver 26.3.0 source. The Wine LGPL notice is in the separate LICENSES archive.

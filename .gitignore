@@ -1,0 +1,7 @@
+/build/
+/dist/
+/ports/devel/libinotify/
+*.log
+__pycache__/
+*.pyc
+.DS_Store
